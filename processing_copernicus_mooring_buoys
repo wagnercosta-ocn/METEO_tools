@@ -1,0 +1,55 @@
+import xarray as xr
+import os
+import datetime
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from google.colab import drive
+drive.mount('/content/drive', force_remount=True)
+
+# LOAD data
+file_name = 'GL_TS_MO_6200163'
+
+ds=xr.open_dataset('/content/drive/MyDrive/Meteo_France_docs/Data/buoy/Copernicus/new/'+file_name+'.nc')
+
+depth=1
+
+swh=ds.VGHS.data[:,depth]
+tp = ds.VTPK.data[:,depth]
+dir = ds.VDIR.data[:,depth]
+qual_swh=ds.VGHS_QC.data[:,depth]
+qual_tp=ds.VTPK_QC.data[:,depth]
+qual_dir=ds.VPSP_QC.data[:,depth]
+
+date = ds.TIME.data
+lat=ds.LATITUDE.data*np.ones(swh.shape[0])
+lon=ds.LONGITUDE.data*np.ones(swh.shape[0])
+
+df = pd.DataFrame({'date': date, 'lat': lat, 'lon': lon, 'swh': swh, 'qual_swh': qual_swh, 'tp':tp,'qual_tp': qual_tp})
+
+df=df.loc[(df['qual_swh']==1) | (df['qual_swh']==2) & (df['qual_tp']==1) | (df['qual_tp']==2) & (df['qual_dir']==1) | (df['qual_dir']==2)]
+#df=df.loc[(df['qual_swh']==1) | (df['qual_swh']==2)]
+df=df.dropna(subset=['swh'])
+
+df=df.loc[(df['date']>=datetime.datetime(2024,12,1)) & (df['date']<=datetime.datetime(2025,7,1))]
+
+df['date']=pd.to_datetime(df['date'],format='%Y-%m-%d %H:%M:%S')
+df['date'] = df['date'].dt.strftime('%Y%m%d%H%M%S')
+df['date']=pd.to_datetime(df['date'],format='%Y%m%d%H%M%S')
+
+df['lon'] = df['lon'].astype('float').map('{:7.2f}'.format)
+df['lat'] = df['lat'].astype('float').map('{:7.2f}'.format)
+df['swh']=df['swh'].astype('float').map('{:5.2f}'.format)
+df['tp']=df['tp'].astype('float').map('{:5.2f}'.format)
+df['dir']=df['dir'].astype('float').map('{:6.2f}'.format)
+df['name_buoy']=file_name
+#df['wind']=df['wind'].astype('float').map('{:5.2f}'.format)
+#df['flag']=np.repeat(ds.platform_code,df.shape[0])
+#df['flag']=np.ones(df.shape[0]).astype('int')
+
+#df['qual']=df['qual'].astype('int')
+#DF['qual']=DF['qual'].astype('int')
+path = '/content/drive/MyDrive/Meteo_France_docs/Data/buoy/Copernicus/new/'+file_name+'_clean'
+with open(path,'w') as f:
+    df_string = df.to_string(header=False, index=False)
+    f.write(df_string)
