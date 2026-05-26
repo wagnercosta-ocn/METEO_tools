@@ -2,54 +2,305 @@ import xarray as xr
 import os
 import datetime
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 from google.colab import drive
+
+# ============================================================
+# MOUNT DRIVE
+# ============================================================
 drive.mount('/content/drive', force_remount=True)
 
-# LOAD data
-file_name = 'GL_TS_MO_6200163'
+# ============================================================
+# PATHS
+# ============================================================
+input_dir = '/content/drive/MyDrive/Meteo_France_docs/Data/buoy/Copernicus/new/'
+output_dir = '/content/drive/MyDrive/Meteo_France_docs/Data/buoy/Copernicus/cleaned/'
 
-ds=xr.open_dataset('/content/drive/MyDrive/Meteo_France_docs/Data/buoy/Copernicus/new/'+file_name+'.nc')
+os.makedirs(output_dir, exist_ok=True)
 
-depth=1
+# ============================================================
+# POSSIBLE VARIABLE NAMES
+# ============================================================
 
-swh=ds.VGHS.data[:,depth]
-tp = ds.VTPK.data[:,depth]
-dir = ds.VDIR.data[:,depth]
-qual_swh=ds.VGHS_QC.data[:,depth]
-qual_tp=ds.VTPK_QC.data[:,depth]
-qual_dir=ds.VPSP_QC.data[:,depth]
+SWH_NAMES = ['VGHS', 'VAVH', 'VAHM0']
 
-date = ds.TIME.data
-lat=ds.LATITUDE.data*np.ones(swh.shape[0])
-lon=ds.LONGITUDE.data*np.ones(swh.shape[0])
+TP_NAMES = ['VTPK']
 
-df = pd.DataFrame({'date': date, 'lat': lat, 'lon': lon, 'swh': swh, 'qual_swh': qual_swh, 'tp':tp,'qual_tp': qual_tp})
+DIR_NAMES = ['VDIR', 'VPSP', 'VMDR']
 
-df=df.loc[(df['qual_swh']==1) | (df['qual_swh']==2) & (df['qual_tp']==1) | (df['qual_tp']==2) & (df['qual_dir']==1) | (df['qual_dir']==2)]
-#df=df.loc[(df['qual_swh']==1) | (df['qual_swh']==2)]
-df=df.dropna(subset=['swh'])
+# QC names are generated automatically:
+# Example:
+# VGHS -> VGHS_QC
 
-df=df.loc[(df['date']>=datetime.datetime(2024,12,1)) & (df['date']<=datetime.datetime(2025,7,1))]
+# ============================================================
+# FIND VALID DEPTHS
+# ============================================================
+def find_good_depth(var_data):
 
-df['date']=pd.to_datetime(df['date'],format='%Y-%m-%d %H:%M:%S')
-df['date'] = df['date'].dt.strftime('%Y%m%d%H%M%S')
-df['date']=pd.to_datetime(df['date'],format='%Y%m%d%H%M%S')
+    """
+    Return depths where data is not all NaN
+    """
 
-df['lon'] = df['lon'].astype('float').map('{:7.2f}'.format)
-df['lat'] = df['lat'].astype('float').map('{:7.2f}'.format)
-df['swh']=df['swh'].astype('float').map('{:5.2f}'.format)
-df['tp']=df['tp'].astype('float').map('{:5.2f}'.format)
-df['dir']=df['dir'].astype('float').map('{:6.2f}'.format)
-df['name_buoy']=file_name
-#df['wind']=df['wind'].astype('float').map('{:5.2f}'.format)
-#df['flag']=np.repeat(ds.platform_code,df.shape[0])
-#df['flag']=np.ones(df.shape[0]).astype('int')
+    # Variable without depth dimension
+    if len(var_data.shape) < 2:
+        return [0]
 
-#df['qual']=df['qual'].astype('int')
-#DF['qual']=DF['qual'].astype('int')
-path = '/content/drive/MyDrive/Meteo_France_docs/Data/buoy/Copernicus/new/'+file_name+'_clean'
-with open(path,'w') as f:
-    df_string = df.to_string(header=False, index=False)
-    f.write(df_string)
+    valid_depths = []
+
+    for d in range(var_data.shape[1]):
+
+        if not np.all(np.isnan(var_data[:, d])):
+            valid_depths.append(d)
+
+    return valid_depths
+
+
+# ============================================================
+# FIND FIRST EXISTING VARIABLE
+# ============================================================
+def find_existing_variable(ds, possible_names):
+
+    for name in possible_names:
+
+        if name in ds.data_vars:
+            return name
+
+    return None
+
+
+# ============================================================
+# FIND QC VARIABLE
+# ============================================================
+def find_qc_variable(ds, var_name):
+
+    if var_name is None:
+        return None
+
+    possible_qc_names = [
+        var_name + '_QC',
+        var_name + 'QC',
+        'QC_' + var_name
+    ]
+
+    for qc_name in possible_qc_names:
+
+        if qc_name in ds.data_vars:
+            return qc_name
+
+    return None
+
+
+# ============================================================
+# LOOP OVER FILES
+# ============================================================
+for file in os.listdir(input_dir):
+
+    if not file.endswith('.nc'):
+        continue
+
+    print('\n================================================')
+    print('Processing:', file)
+    print('================================================')
+
+    file_path = os.path.join(input_dir, file)
+
+    ds = xr.open_dataset(file_path)
+
+    # --------------------------------------------------------
+    # PRINT VARIABLES
+    # --------------------------------------------------------
+    print('\nVariables in file:\n')
+
+    for var in ds.data_vars:
+        print(var)
+
+    # ========================================================
+    # IDENTIFY VARIABLES AUTOMATICALLY
+    # ========================================================
+    swh_var = find_existing_variable(ds, SWH_NAMES)
+
+    tp_var = find_existing_variable(ds, TP_NAMES)
+
+    dir_var = find_existing_variable(ds, DIR_NAMES)
+
+    qc_swh_var = find_qc_variable(ds, swh_var)
+
+    qc_tp_var = find_qc_variable(ds, tp_var)
+
+    qc_dir_var = find_qc_variable(ds, dir_var)
+
+    # --------------------------------------------------------
+    # PRINT DETECTED VARIABLES
+    # --------------------------------------------------------
+    print('\nDetected variables:')
+    print('SWH      :', swh_var)
+    print('TP       :', tp_var)
+    print('DIR      :', dir_var)
+
+    print('QC SWH   :', qc_swh_var)
+    print('QC TP    :', qc_tp_var)
+    print('QC DIR   :', qc_dir_var)
+
+    # --------------------------------------------------------
+    # CHECK REQUIRED VARIABLE
+    # --------------------------------------------------------
+    if swh_var is None:
+
+        print('\nNo wave height variable found.')
+        continue
+
+    # ========================================================
+    # FIND GOOD DEPTHS
+    # ========================================================
+    valid_depths = find_good_depth(
+        ds[swh_var].data
+    )
+
+    print('\nValid depths:', valid_depths)
+
+    if len(valid_depths) == 0:
+
+        print('No valid depth found.')
+        continue
+
+    # Use first good depth
+    depth = valid_depths[0]
+
+    print('Using depth:', depth)
+
+    # ========================================================
+    # LOAD DATA
+    # ========================================================
+    swh = ds[swh_var].data[:, depth]
+
+    tp = (
+        ds[tp_var].data[:, depth]
+        if tp_var is not None
+        else np.nan * np.ones_like(swh)
+    )
+
+    direction = (
+        ds[dir_var].data[:, depth]
+        if dir_var is not None
+        else np.nan * np.ones_like(swh)
+    )
+
+    # ========================================================
+    # QC DATA
+    # ========================================================
+    qual_swh = (
+        ds[qc_swh_var].data[:, depth]
+        if qc_swh_var is not None
+        else np.ones_like(swh)
+    )
+
+    qual_tp = (
+        ds[qc_tp_var].data[:, depth]
+        if qc_tp_var is not None
+        else np.ones_like(swh)
+    )
+
+    qual_dir = (
+        ds[qc_dir_var].data[:, depth]
+        if qc_dir_var is not None
+        else np.ones_like(swh)
+    )
+
+    # ========================================================
+    # TIME / POSITION
+    # ========================================================
+    date = ds.TIME.data
+
+    lat = ds.LATITUDE.data * np.ones(swh.shape[0])
+
+    lon = ds.LONGITUDE.data * np.ones(swh.shape[0])
+
+    # ========================================================
+    # CREATE DATAFRAME
+    # ========================================================
+    df = pd.DataFrame({
+
+        'date': date,
+        'lat': lat,
+        'lon': lon,
+
+        'swh': swh,
+        'tp': tp,
+        'dir': direction,
+
+        'qual_swh': qual_swh,
+        'qual_tp': qual_tp,
+        'qual_dir': qual_dir
+    })
+
+    # ========================================================
+    # QUALITY CONTROL
+    # ========================================================
+    df = df.loc[
+        (
+            (df['qual_swh'] == 1) |
+            (df['qual_swh'] == 2)
+        ) &
+        (
+            (df['qual_tp'] == 1) |
+            (df['qual_tp'] == 2)
+        ) &
+        (
+            (df['qual_dir'] == 1) |
+            (df['qual_dir'] == 2)
+        )
+    ]
+
+    # Remove NaN wave heights
+    df = df.dropna(subset=['swh'])
+
+    # ========================================================
+    # DATE FILTER
+    # ========================================================
+    df = df.loc[
+        (df['date'] >= datetime.datetime(2024, 12, 1)) &
+        (df['date'] <= datetime.datetime(2025, 7, 1))
+    ]
+
+    # ========================================================
+    # FORMAT
+    # ========================================================
+    df['date'] = pd.to_datetime(df['date'])
+
+    df['lon'] = df['lon'].astype(float).map('{:7.2f}'.format)
+
+    df['lat'] = df['lat'].astype(float).map('{:7.2f}'.format)
+
+    df['swh'] = df['swh'].astype(float).map('{:5.2f}'.format)
+
+    df['tp'] = df['tp'].astype(float).map('{:5.2f}'.format)
+
+    df['dir'] = df['dir'].astype(float).map('{:6.2f}'.format)
+
+    # ========================================================
+    # BUOY NAME
+    # ========================================================
+    file_name = os.path.splitext(file)[0]
+
+    df['name_buoy'] = file_name
+
+    # ========================================================
+    # SAVE OUTPUT
+    # ========================================================
+    output_path = os.path.join(
+        output_dir,
+        file_name + '_clean.txt'
+    )
+
+    with open(output_path, 'w') as f:
+
+        df_string = df.to_string(
+            header=False,
+            index=False
+        )
+
+        f.write(df_string)
+
+    print('\nSaved:', output_path)
+
+print('\nALL FILES PROCESSED')
