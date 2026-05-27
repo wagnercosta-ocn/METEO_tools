@@ -1,7 +1,7 @@
 '''
 This code extracts time series data from NetCDF files (model outputs) and a text file (buoy data), comparing them, calculating bias and RMSE, and visualizing the results.
 '''
-import netCDF4
+import xarray as xr
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -23,127 +23,110 @@ TARGET_BUOY_LON = -1.614 # Example longitude
 # ==========================================================================================
 
 try:
-    nc_file_1 = netCDF4.Dataset(NETCDF_FILE_1, 'r')
+    ds_1 = xr.open_dataset(NETCDF_FILE_1)
     print(f"Successfully opened: {NETCDF_FILE_1}")
 except FileNotFoundError:
     print(f"Error: File not found at {NETCDF_FILE_1}. Please check the path.")
-    nc_file_1 = None
+    ds_1 = None
 
-if nc_file_1:
+if ds_1:
     # Display dimensions
     print("\nDimensions:")
-    for dim_name, dim in nc_file_1.dimensions.items():
-        print(f"  {dim_name}: {len(dim)}")
+    for dim_name, dim_len in ds_1.dims.items():
+        print(f"  {dim_name}: {dim_len}")
 
-    # Display variables
+    # Display variables and their attributes
     print("\nVariables:")
-    for var_name, var in nc_file_1.variables.items():
-        print(f"  {var_name}: {var.shape} {var.dtype} {getattr(var, 'units', '')}")
-
-    # Close the file for now, we'll reopen it to extract data specifically
-    # nc_file_1.close()
-    # print("\nNetCDF file 1 closed.")
-
+    for var_name, var in ds_1.variables.items():
+        # Check if it's a data variable (not just a coordinate) and has shape (exclude scalar coords if any)
+        if var_name not in ds_1.coords and len(var.shape) > 0:
+            units = getattr(var, 'units', '')
+            print(f"  {var_name}: {var.shape} {var.dtype} {units}")
+    print("\nDataset structure (ds_1):")
+    display(ds_1)
 
 # --- USER INPUT REQUIRED --- 
 # Replace these with the actual variable and coordinate names from your NetCDF file 1
-MODEL_VAR_NAME_1 = 'var_100'  # e.g., 'hs' or 'significant_wave_height'
+MODEL_VAR_NAME_1 = 'example_wave_height_variable'  # e.g., 'hs' or 'significant_wave_height'
 MODEL_TIME_COORD_1 = 'time' # e.g., 'time' or 't_dim'
 MODEL_LAT_COORD_1 = 'lat'   # e.g., 'lat' or 'latitude'
 MODEL_LON_COORD_1 = 'lon'   # e.g., 'lon' or 'longitude'
 
-if nc_file_1:
-    # Reopen file for data extraction
-    nc_file_1 = netCDF4.Dataset(NETCDF_FILE_1, 'r')
+if 'ds_1' in locals() and ds_1 is not None:
+    # Use .sel with 'method=nearest' for spatial selection
+    model_point_1 = ds_1.sel(
+        {MODEL_LAT_COORD_1: TARGET_BUOY_LAT, MODEL_LON_COORD_1: TARGET_BUOY_LON},
+        method='nearest'
+    )
 
-    # Extract coordinates
-    model_lats_1 = nc_file_1.variables[MODEL_LAT_COORD_1][:]
-    model_lons_1 = nc_file_1.variables[MODEL_LON_COORD_1][:]
-    model_times_1 = netCDF4.num2date(nc_file_1.variables[MODEL_TIME_COORD_1][:], 
-                                    nc_file_1.variables[MODEL_TIME_COORD_1].units)
+    # Extract the time series for the specified variable and convert to Pandas Series
+    model_series_1 = model_point_1[MODEL_VAR_NAME_1].to_series()
 
-    # Find the nearest model grid point to the buoy location
-    idx_lat_1 = (np.abs(model_lats_1 - TARGET_BUOY_LAT)).argmin()
-    idx_lon_1 = (np.abs(model_lons_1 - TARGET_BUOY_LON)).argmin()
+    # Get the actual coordinates of the nearest point for printing
+    nearest_lat_1 = model_point_1[MODEL_LAT_COORD_1].item()
+    nearest_lon_1 = model_point_1[MODEL_LON_COORD_1].item()
 
-    # Extract the time series for the specified variable at the nearest grid point
-    model_ts_1 = nc_file_1.variables[MODEL_VAR_NAME_1][:, idx_lat_1, idx_lon_1]
-
-    # Create a Pandas Series for easier handling
-    model_series_1 = pd.Series(model_ts_1, index=model_times_1)
-    
-    print(f"\nExtracted time series for {MODEL_VAR_NAME_1} from Model 1 at nearest grid point: ({model_lats_1[idx_lat_1]:.2f}, {model_lons_1[idx_lon_1]:.2f})")
+    print(f"\nExtracted time series for {MODEL_VAR_NAME_1} from Model 1 at nearest grid point: ({nearest_lat_1:.2f}, {nearest_lon_1:.2f})")
     display(model_series_1.head())
     display(model_series_1.tail())
     print(f"Number of data points for Model 1: {len(model_series_1)}")
+    # Ensure the index is datetime for calculating resolution (xarray usually handles this)
+    model_series_1.index = pd.to_datetime(model_series_1.index)
     print(f"Time resolution for Model 1: {pd.Series(model_series_1.index).diff().mode().dt.total_seconds().iloc[0] / 3600:.2f} hours")
 
-    nc_file_1.close()
+    ds_1.close() # Close the xarray dataset
 else:
     print("Skipping NetCDF Model 1 data extraction due to file error.")
-
 # ==========================================================================================
 # Load the second NetCDF file
 # ==========================================================================================
 try:
-    nc_file_2 = netCDF4.Dataset(NETCDF_FILE_2, 'r')
+    ds_2 = xr.open_dataset(NETCDF_FILE_2)
     print(f"Successfully opened: {NETCDF_FILE_2}")
 except FileNotFoundError:
     print(f"Error: File not found at {NETCDF_FILE_2}. Please check the path.")
-    nc_file_2 = None
+    ds_2 = None
 
-if nc_file_2:
+if ds_2:
     # Display dimensions
     print("\nDimensions:")
-    for dim_name, dim in nc_file_2.dimensions.items():
-        print(f"  {dim_name}: {len(dim)}")
+    for dim_name, dim_len in ds_2.dims.items():
+        print(f"  {dim_name}: {dim_len}")
 
-    # Display variables
+    # Display variables and their attributes
     print("\nVariables:")
-    for var_name, var in nc_file_2.variables.items():
-        print(f"  {var_name}: {var.shape} {var.dtype} {getattr(var, 'units', '')}")
-
-    # Close the file for now, we'll reopen it to extract data specifically
-    # nc_file_2.close()
-    # print("\nNetCDF file 2 closed.")
-
+    for var_name, var in ds_2.variables.items():
+        # Check if it's a data variable (not just a coordinate) and has shape
+        if var_name not in ds_2.coords and len(var.shape) > 0:
+            units = getattr(var, 'units', '')
+            print(f"  {var_name}: {var.shape} {var.dtype} {units}")
+    print("\nDataset structure (ds_2):")
+    display(ds_2)
+    
 # --- USER INPUT REQUIRED --- 
 # Replace these with the actual variable and coordinate names from your NetCDF file 2
-MODEL_VAR_NAME_2 = 'var_100'  # e.g., 'hs' or 'significant_wave_height'
-MODEL_TIME_COORD_2 = 'time' # e.g., 'time' or 't_dim'
-MODEL_LAT_COORD_2 = 'lat'   # e.g., 'lat' or 'latitude'
-MODEL_LON_COORD_2 = 'lon'   # e.g., 'lon' or 'longitude'
+try:
+    ds_2 = xr.open_dataset(NETCDF_FILE_2)
+    print(f"Successfully opened: {NETCDF_FILE_2}")
+except FileNotFoundError:
+    print(f"Error: File not found at {NETCDF_FILE_2}. Please check the path.")
+    ds_2 = None
 
-if nc_file_2:
-    # Reopen file for data extraction
-    nc_file_2 = netCDF4.Dataset(NETCDF_FILE_2, 'r')
+if ds_2:
+    # Display dimensions
+    print("\nDimensions:")
+    for dim_name, dim_len in ds_2.dims.items():
+        print(f"  {dim_name}: {dim_len}")
 
-    # Extract coordinates
-    model_lats_2 = nc_file_2.variables[MODEL_LAT_COORD_2][:]
-    model_lons_2 = nc_file_2.variables[MODEL_LON_COORD_2][:]
-    model_times_2 = netCDF4.num2date(nc_file_2.variables[MODEL_TIME_COORD_2][:], 
-                                    nc_file_2.variables[MODEL_TIME_COORD_2].units)
-
-    # Find the nearest model grid point to the buoy location
-    idx_lat_2 = (np.abs(model_lats_2 - TARGET_BUOY_LAT)).argmin()
-    idx_lon_2 = (np.abs(model_lons_2 - TARGET_BUOY_LON)).argmin()
-
-    # Extract the time series for the specified variable at the nearest grid point
-    model_ts_2 = nc_file_2.variables[MODEL_VAR_NAME_2][:, idx_lat_2, idx_lon_2]
-
-    # Create a Pandas Series for easier handling
-    model_series_2 = pd.Series(model_ts_2, index=model_times_2)
-    
-    print(f"\nExtracted time series for {MODEL_VAR_NAME_2} from Model 2 at nearest grid point: ({model_lats_2[idx_lat_2]:.2f}, {model_lons_2[idx_lon_2]:.2f})")
-    display(model_series_2.head())
-    display(model_series_2.tail())
-    print(f"Number of data points for Model 2: {len(model_series_2)}")
-    print(f"Time resolution for Model 2: {pd.Series(model_series_2.index).diff().mode().dt.total_seconds().iloc[0] / 3600:.2f} hours")
-
-    nc_file_2.close()
-else:
-    print("Skipping NetCDF Model 2 data extraction due to file error.")
-
+    # Display variables and their attributes
+    print("\nVariables:")
+    for var_name, var in ds_2.variables.items():
+        # Check if it's a data variable (not just a coordinate) and has shape
+        if var_name not in ds_2.coords and len(var.shape) > 0:
+            units = getattr(var, 'units', '')
+            print(f"  {var_name}: {var.shape} {var.dtype} {units}")
+    print("\nDataset structure (ds_2):")
+    display(ds_2)
 # ==========================================================================================
 # Load the buoy data file
 # ==========================================================================================
@@ -249,7 +232,6 @@ if 'model_series_1' in locals() and 'model_series_2' in locals() and 'buoy_serie
         buoy_series_aligned = None
 else:
     print("Skipping time series alignment due to missing data.")
-
 # ==========================================================================================
 ### 6. Calculate Bias and RMSE  
 # ==========================================================================================
