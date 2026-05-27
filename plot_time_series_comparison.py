@@ -1,3 +1,6 @@
+'''
+This code extracts time series data from NetCDF files (model outputs) and a text file (buoy data), comparing them, calculating bias and RMSE, and visualizing the results.
+'''
 import netCDF4
 import pandas as pd
 import numpy as np
