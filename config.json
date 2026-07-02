@@ -1,0 +1,59 @@
+{
+    "MODEL_LON_SYSTEM": "360",
+    "OBS_LON_SYSTEM": "180",
+    "TARGET_LON_SYSTEM": "360",
+
+    "TIME_NAME": "time",
+    "LAT_NAME": "latitude",
+    "LON_NAME": "longitude",
+
+    "RES_DEG": 1.0,
+    "MAX_DIST_DEG": 0.25,
+    "TIME_WINDOW_SEC": 1800,
+
+    "VARIABLES": [
+        {
+            "name": "hs",
+            "model_var": "hs",
+            "obs_col": "Hs"
+        }
+    ],
+
+    "ALT_COLUMNS": [
+        "date",
+        "lat",
+        "lon",
+        "Hs",
+        "satellite",
+        "cycle",
+        "track"
+    ],
+
+    "KEEP_OBS_COLUMNS": [
+        "satellite",
+        "cycle",
+        "track"
+    ],
+
+    "OBS_WITH_HEADER": false,
+
+    "OUTPUT_COLUMNS": [
+        "date",
+        "lat",
+        "lon",
+        "mod_hs",
+        "obs_hs",
+        "diff_hs",
+        "satellite",
+        "cycle",
+        "track"
+    ],
+
+    "OUTPUT_SEPARATOR": " ",
+
+    "OUTPUT_WITH_HEADER": true,
+
+    "OUTPUT_DATE_FORMAT": "%Y%m%d%H%M%S",
+
+    "OUTPUT_FLOAT_FORMAT": "%.3f"
+}
